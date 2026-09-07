@@ -30,7 +30,7 @@ import {
   auditService,
   retrievalService,
   notificationService
-} from '@/services/mock';
+} from '@/services/supabase';
 import { AssistantResponse } from '@/services/interfaces';
 import { MOCK_STORES } from '@/data/mockStores';
 import { INITIAL_ORDERS } from '@/data/mockOrders';
