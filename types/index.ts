@@ -360,6 +360,7 @@ export interface Message {
   timestamp: string;
   actionPayload?: AssistantActionPayload;
   suggestedFollowUps?: string[];
+  matchedProducts?: Product[];
 }
 
 export interface Conversation {

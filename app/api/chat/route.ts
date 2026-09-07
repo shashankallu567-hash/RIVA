@@ -4,7 +4,7 @@ import { retrievalService } from '@/services/mock';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { query, memory, activeStoreId } = body;
+    const { query, memory, activeStoreId, language = 'en' } = body;
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 });
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     // 1. Retrieve RIVA Retail Context (Products, Policies, Inventory, Intent)
     const contextResult = await retrievalService.retrieveContext(query, activeStoreId, memory);
 
-    // 2. Check for optional external LLM provider key
+    // 2. Check for external LLM provider key
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -25,7 +25,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. If OPENAI_API_KEY is present, synthesize answer using OpenAI API
+    // Language Mapping Hint for OpenAI system prompt
+    const languageNames: Record<string, string> = {
+      kn: 'Kannada (ಕನ್ನಡ)',
+      hi: 'Hindi (हिन्दी)',
+      ta: 'Tamil (தமிழ்)',
+      te: 'Telugu (తెలుగు)',
+      ml: 'Malayalam (മലയാളം)',
+      mr: 'Marathi (मराठी)',
+      bn: 'Bengali (বাংলা)',
+      en: 'English',
+      auto: 'the same language as the user query (Automatic Detection)',
+    };
+
+    const targetLangInstruction = languageNames[language] || 'the language of the user query';
+
+    // 3. Synthesize natural answer using OpenAI GPT-4o-mini
     try {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -38,10 +53,16 @@ export async function POST(req: NextRequest) {
           messages: [
             {
               role: 'system',
-              content: `You are RIVA, an intelligent FMCG Retail Assistant. Use the provided store context to answer accurately. 
+              content: `You are RIVA, an intelligent in-store FMCG Retail Assistant. 
+Language Instruction: Automatically detect the language of the user's message OR respond in ${targetLangInstruction}. If the query is in Kannada, Hindi, Tamil, Telugu, Malayalam, Marathi, Bengali, or English, answer fluently in that language.
 Context Summary: ${contextResult.suggestedResponse}
 Intent Identified: ${contextResult.intent}
-Matched Products: ${JSON.stringify(contextResult.matchedProducts.map((p) => ({ name: p.name, brand: p.brand, price: p.price, stock: p.stock, location: p.location })))}`,
+Matched Products: ${JSON.stringify(contextResult.matchedProducts.map((p) => ({ name: p.name, brand: p.brand, price: p.price, stock: p.stock, location: p.location })))}
+
+Guidelines:
+1. Always keep numerical values exact: Price in ₹, stock units, aisle and shelf numbers.
+2. Keep brand/product names clear and recognizable (e.g. Amul, Tata Tea, Maggi).
+3. Be friendly, concise, natural, and helpful.`,
             },
             {
               role: 'user',
@@ -49,7 +70,7 @@ Matched Products: ${JSON.stringify(contextResult.matchedProducts.map((p) => ({ n
             },
           ],
           temperature: 0.3,
-          max_tokens: 300,
+          max_tokens: 350,
         }),
       });
 
@@ -67,7 +88,7 @@ Matched Products: ${JSON.stringify(contextResult.matchedProducts.map((p) => ({ n
       console.warn('OpenAI API call failed, falling back to RIVA deterministic engine:', llmErr);
     }
 
-    // Default return
+    // Fallback return
     return NextResponse.json({
       success: true,
       provider: 'riva-engine-fallback',
